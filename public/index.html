@@ -42,12 +42,11 @@
       <h1>eForms</h1>
       <div class="list-actions">
         <input type="search" id="formSearch" placeholder="Filter by name or folder…" />
-        <button id="scanBtn" class="secondary-btn">Scan for eForms</button>
+        <button id="scanBtn" class="secondary-btn">Refresh eForms list</button>
       </div>
     </div>
     <p class="muted small">
-      Therefore's API has no operation to list eForms directly, so this scans sequential form numbers
-      via <code>GetEForm</code> and stops after a run of misses. Re-scan any time new forms are added.
+      Refreshing re-fetches the full eForm list plus each form's latest version. Do this any time new forms are added.
     </p>
     <div id="scanStatus" class="scan-status hidden"></div>
     <div id="formsTableWrap">
@@ -55,7 +54,7 @@
         <thead><tr><th>Form No</th><th>Name</th><th>Folder</th><th>Latest version</th></tr></thead>
         <tbody id="formsTableBody"></tbody>
       </table>
-      <p id="emptyState" class="muted">No eForms cached yet — click "Scan for eForms" to discover them.</p>
+      <p id="emptyState" class="muted">No eForms cached yet — click "Refresh eForms list" to fetch them.</p>
     </div>
   </section>
 

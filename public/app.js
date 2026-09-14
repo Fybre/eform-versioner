@@ -138,13 +138,13 @@ $('#scanBtn').addEventListener('click', async () => {
   const status = $('#scanStatus');
   btn.disabled = true;
   status.classList.remove('hidden');
-  status.textContent = 'Scanning form numbers for eForms — this can take a little while on large tenants…';
+  status.textContent = 'Fetching eForms…';
   try {
     const data = await api('/eforms/scan', { method: 'POST', body: {} });
     status.textContent = `Found ${data.count} eForm(s).`;
     await loadCatalog();
   } catch (err) {
-    status.textContent = `Scan failed: ${err.message}`;
+    status.textContent = `Refresh failed: ${err.message}`;
   } finally {
     btn.disabled = false;
     setTimeout(() => status.classList.add('hidden'), 5000);

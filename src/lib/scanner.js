@@ -1,15 +1,76 @@
 'use strict';
 
+const EFORM_OBJECT_TYPE = 47; // see ThereforeClient.getObjects doc comment
+
 /**
- * Therefore's REST API has no "list eForms" operation (confirmed against the live
- * WSDL — GetEForm/SaveEForm/CopyEForm/DeleteEForm are the only eForm ops, and
- * GetCategoriesTree only returns document categories/cases, not eForm folders).
- * FormNo is a sequential integer, so we discover forms by probing GetEForm(FormNo, 0)
- * across a range and collecting the hits. We stop once we've seen a long enough run
- * of consecutive misses past the highest hit found, so tenants with a modest form
- * count don't require scanning an arbitrary ceiling.
+ * Primary discovery path: GetObjects(Type:47) returns every eForm in the tenant in one
+ * call. Verified against a live tenant to exactly match a full FormNo scan. Resolves
+ * latestVersionNo (not present on GetObjects' output) with one GetEForm(FormNo, 0) call
+ * per form, run with bounded concurrency.
  */
-async function scanForms(client, { maxProbe = 2000, missStreakStop = 60, concurrency = 12, onProgress } = {}) {
+async function listFormsViaObjects(client, { concurrency = 12, onProgress } = {}) {
+  const { itemList } = await client.getObjects(1, EFORM_OBJECT_TYPE);
+  if (!Array.isArray(itemList)) throw new Error('GetObjects returned no ItemList');
+
+  const folderNameCache = new Map();
+  async function resolveFolderName(folderNo) {
+    if (!folderNo) return null;
+    if (folderNameCache.has(folderNo)) return folderNameCache.get(folderNo);
+    try {
+      const folder = await client.getFolder(folderNo);
+      const name = folder ? folder.Name : null;
+      folderNameCache.set(folderNo, name);
+      return name;
+    } catch {
+      folderNameCache.set(folderNo, null);
+      return null;
+    }
+  }
+
+  const results = [];
+  for (let i = 0; i < itemList.length; i += concurrency) {
+    const batch = itemList.slice(i, i + concurrency);
+    const resolved = await Promise.all(
+      batch.map(async (item) => {
+        let latestVersionNo = null;
+        let created = null;
+        try {
+          const eform = await client.getEForm(item.ID, 0);
+          latestVersionNo = eform.VersionNo;
+          created = eform.CreatedISO8601 || null;
+        } catch {
+          // Form is listed but currently unreadable (permissions, etc.) — keep it, just without version info.
+        }
+        return {
+          formNo: item.ID,
+          name: item.Name,
+          folderNo: item.FolderNo,
+          latestVersionNo,
+          created,
+          anonymousAccessEnabled: (item.Flags & 1) === 1,
+          guid: item.Guid,
+        };
+      })
+    );
+    results.push(...resolved);
+    if (onProgress) onProgress({ probed: i + batch.length, found: results.length, total: itemList.length });
+  }
+
+  for (const r of results) {
+    r.folderName = await resolveFolderName(r.folderNo);
+  }
+
+  results.sort((a, b) => a.formNo - b.formNo);
+  return results;
+}
+
+/**
+ * Fallback discovery path, used only if GetObjects(Type:47) is unavailable or errors on a
+ * given server. Therefore's REST API otherwise has no "list eForms" operation — FormNo is a
+ * sequential integer, so this probes GetEForm(FormNo, 0) across a range and collects hits,
+ * stopping after a long enough run of consecutive misses past the highest hit found.
+ */
+async function scanFormsByProbing(client, { maxProbe = 2000, missStreakStop = 60, concurrency = 12, onProgress } = {}) {
   const folderNameCache = new Map();
   const results = [];
   let highestHit = 0;
@@ -57,6 +118,7 @@ async function scanForms(client, { maxProbe = 2000, missStreakStop = 60, concurr
           folderNo: eform.FolderNo,
           latestVersionNo: eform.VersionNo,
           created: eform.CreatedISO8601 || null,
+          anonymousAccessEnabled: eform.AnonymousAccessEnabled,
         });
       }
     }
@@ -68,7 +130,6 @@ async function scanForms(client, { maxProbe = 2000, missStreakStop = 60, concurr
     }
   }
 
-  // Resolve folder names (sequential-ish, small cache-bound concurrency).
   for (const r of results) {
     r.folderName = await resolveFolderName(r.folderNo);
   }
@@ -77,4 +138,14 @@ async function scanForms(client, { maxProbe = 2000, missStreakStop = 60, concurr
   return results;
 }
 
-module.exports = { scanForms };
+/** Discovers all eForms in the tenant, preferring the direct GetObjects listing and falling back to a FormNo probe scan. */
+async function scanForms(client, opts = {}) {
+  try {
+    return await listFormsViaObjects(client, opts);
+  } catch (err) {
+    console.warn(`GetObjects(Type:47) discovery failed (${err.message}); falling back to FormNo probing.`);
+    return scanFormsByProbing(client, opts);
+  }
+}
+
+module.exports = { scanForms, listFormsViaObjects, scanFormsByProbing };

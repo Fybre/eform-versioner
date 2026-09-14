@@ -99,6 +99,20 @@ class ThereforeClient {
     return res.Folder;
   }
 
+  /**
+   * GetObjects with Type:47 returns every eForm tenant-wide in one call (ID=FormNo,
+   * Name, FolderNo, Guid, and a per-item Flags bit that is set when
+   * AnonymousAccessEnabled is true) — verified against a live tenant, matches a full
+   * FormNo scan exactly. This isn't documented anywhere as a "list eForms" operation
+   * (Type 47 happens to coincide with the eForm-folder Foldertype), so it's used as the
+   * primary discovery path with the brute-force FormNo scan kept as a fallback in case
+   * it doesn't hold on some server versions/configurations.
+   */
+  async getObjects(flags, type) {
+    const res = await this.post('GetObjects', { Flags: flags, Type: type });
+    return { itemList: res.ItemList || [], folderList: res.FolderList || [] };
+  }
+
   /** VersionNo 0 = latest */
   async getEForm(formNo, versionNo = 0) {
     const res = await this.post('GetEForm', { FormNo: formNo, VersionNo: versionNo });

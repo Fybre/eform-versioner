@@ -19,24 +19,27 @@ already supports a `VersionNo`.
   as an extra backup independent of Therefore, with a label/notes, and restore it later the
   same way as a revert.
 
-## How eForm discovery works (and its limitation)
+## How eForm discovery works
 
-Therefore's REST API has no "list eForms" operation — confirmed against the live WSDL
-(`GetEForm`, `SaveEForm`, `CopyEForm`, `DeleteEForm` and a few submission-related ops are the
-only eForm operations that exist; `GetCategoriesTree` only returns document categories/cases,
-not eForm folders).
+There's no operation named anything like "list eForms" in Therefore's REST API or WSDL — but
+`GetObjects` with `{"Flags": 1, "Type": 47}` turns out to return every eForm in the tenant in
+one call (`ID` = FormNo, plus `Name`, `FolderNo`, `Guid`, and a `Flags` bit that's set exactly
+when `AnonymousAccessEnabled` is true). This isn't documented anywhere as an eForm listing —
+`47` happens to be the same value used as the `Foldertype` for eForm folders — but it was
+verified against a live tenant to return an identical set of forms as an exhaustive `FormNo`
+scan. `src/lib/scanner.js` uses it as the primary discovery path (`listFormsViaObjects`), doing
+one extra `GetEForm(FormNo, 0)` per form (in parallel batches) only to pick up each form's
+latest version number, which `GetObjects` doesn't include.
 
-`FormNo` is a plain sequential integer, so this app discovers forms by probing
-`GetEForm(FormNo, 0)` across a range of numbers and collecting the hits, stopping once it sees
-a long enough run of consecutive misses past the highest hit found. This means:
+If `GetObjects(Type:47)` ever errors or comes back empty on some server version/configuration,
+the app falls back to the old brute-force approach (`scanFormsByProbing`): since `FormNo` is a
+plain sequential integer, it probes `GetEForm(FormNo, 0)` across a range and collects the hits,
+stopping once it sees a long enough run of consecutive misses past the highest hit found. This
+path is slower (network round trips scale with the FormNo range, not the form count) and is
+only expected to run if the primary path breaks.
 
-- The first "Scan for eForms" on a tenant takes a little while (a form or two per request).
-- Results are cached locally (SQLite) and shown instantly after that — click **Scan for
-  eForms** again any time new forms are added.
-- It's a workaround for a genuine API gap, not a guess — verify against your own tenant if
-  forms seem to be missing (very large `FormNo` gaps beyond the default miss-streak threshold
-  won't be found automatically; the scan range/threshold are adjustable via the `/api/eforms/scan`
-  request body if needed).
+Either way, results are cached locally (SQLite) and shown instantly after the first fetch —
+click **Refresh eForms list** any time new forms are added.
 
 ## Versioning semantics (verified against a live tenant)
 
