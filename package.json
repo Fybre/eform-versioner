@@ -1,0 +1,20 @@
+{
+  "name": "eform-versioner",
+  "version": "1.0.0",
+  "description": "Version control for Therefore eForms — create, browse, diff, and revert eForm versions with offline snapshots.",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1"
+  },
+  "optionalDependencies": {
+    "puppeteer": "^23.11.1"
+  }
+}

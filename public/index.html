@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>eForm Versioner</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">eForm Versioner <span class="tagline">for Therefore</span></div>
+  <div id="connectionStatus" class="connection-status hidden">
+    <span id="connTenant"></span>
+    <button id="disconnectBtn" class="link-btn">disconnect</button>
+  </div>
+</header>
+
+<main id="app">
+
+  <section id="connectView" class="view">
+    <div class="card connect-card">
+      <h1>Connect to a tenant</h1>
+      <p class="muted">Enter a Therefore Online tenant name (e.g. <code>craigdemo</code>) or a full base URL for on-premise servers.</p>
+      <form id="connectForm">
+        <label>Tenant / host
+          <input type="text" id="tenantInput" placeholder="craigdemo" required autocomplete="off" />
+        </label>
+        <label>Username
+          <input type="text" id="usernameInput" required autocomplete="username" />
+        </label>
+        <label>Password
+          <input type="password" id="passwordInput" required autocomplete="current-password" />
+        </label>
+        <button type="submit" class="primary-btn" id="connectBtn">Connect</button>
+      </form>
+      <p id="connectError" class="error-text hidden"></p>
+    </div>
+  </section>
+
+  <section id="listView" class="view hidden">
+    <div class="list-header">
+      <h1>eForms</h1>
+      <div class="list-actions">
+        <input type="search" id="formSearch" placeholder="Filter by name or folder…" />
+        <button id="scanBtn" class="secondary-btn">Scan for eForms</button>
+      </div>
+    </div>
+    <p class="muted small">
+      Therefore's API has no operation to list eForms directly, so this scans sequential form numbers
+      via <code>GetEForm</code> and stops after a run of misses. Re-scan any time new forms are added.
+    </p>
+    <div id="scanStatus" class="scan-status hidden"></div>
+    <div id="formsTableWrap">
+      <table id="formsTable" class="hidden">
+        <thead><tr><th>Form No</th><th>Name</th><th>Folder</th><th>Latest version</th></tr></thead>
+        <tbody id="formsTableBody"></tbody>
+      </table>
+      <p id="emptyState" class="muted">No eForms cached yet — click "Scan for eForms" to discover them.</p>
+    </div>
+  </section>
+
+  <section id="detailView" class="view hidden">
+    <button id="backBtn" class="link-btn">&larr; back to list</button>
+    <div class="detail-header">
+      <div>
+        <h1 id="detailName">&nbsp;</h1>
+        <p class="muted" id="detailMeta"></p>
+      </div>
+      <div class="detail-actions">
+        <button id="newVersionBtn" class="primary-btn">Create new version to edit</button>
+        <button id="snapshotBtn" class="secondary-btn">Take offline snapshot</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div class="panel">
+        <h2>Version history</h2>
+        <div id="versionsList" class="list-scroll"></div>
+      </div>
+      <div class="panel">
+        <h2>Offline snapshots</h2>
+        <p class="muted small">Local backups stored by this tool, independent of Therefore's own versions.</p>
+        <div id="snapshotsList" class="list-scroll"></div>
+      </div>
+    </div>
+
+    <div id="comparePanel" class="panel hidden">
+      <h2>Compare &amp; diff</h2>
+      <div class="compare-bar">
+        <div class="compare-side">
+          <div class="compare-label">From</div>
+          <div id="compareFrom" class="compare-chip">—</div>
+          <img id="screenshotFrom" class="screenshot" alt="Screenshot unavailable" />
+        </div>
+        <div class="compare-arrow">→</div>
+        <div class="compare-side">
+          <div class="compare-label">To</div>
+          <div id="compareTo" class="compare-chip">—</div>
+          <img id="screenshotTo" class="screenshot" alt="Screenshot unavailable" />
+        </div>
+      </div>
+      <div id="diffSummary" class="diff-summary"></div>
+      <div id="diffDetails" class="diff-details"></div>
+      <div class="compare-footer">
+        <button id="revertHereBtn" class="danger-btn hidden">Revert to "From" (creates new version)</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast hidden"></div>
+<div id="modalRoot"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
