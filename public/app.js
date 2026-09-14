@@ -104,9 +104,18 @@ $('#disconnectBtn').addEventListener('click', async () => {
 // ---------------------------------------------------------------------------------
 
 async function loadCatalog() {
-  const data = await api('/eforms');
-  state.forms = data.forms;
-  renderFormsTable();
+  // GET /eforms auto-fetches from Therefore on the server when nothing's cached yet for this
+  // tenant, so the first visit can take a moment — show a status line for that case.
+  const status = $('#scanStatus');
+  status.classList.remove('hidden');
+  status.textContent = 'Loading eForms…';
+  try {
+    const data = await api('/eforms');
+    state.forms = data.forms;
+    renderFormsTable();
+  } finally {
+    status.classList.add('hidden');
+  }
 }
 
 function renderFormsTable() {
@@ -155,9 +164,10 @@ $('#scanBtn').addEventListener('click', async () => {
 // Form detail
 // ---------------------------------------------------------------------------------
 
-$('#backBtn').addEventListener('click', () => {
+$('#backBtn').addEventListener('click', async () => {
   showView('list');
   state.currentForm = null;
+  await loadCatalog(); // picks up any version created while viewing this form's detail
 });
 
 async function openForm(formNo) {

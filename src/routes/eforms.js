@@ -36,21 +36,70 @@ function handleApiError(res, err) {
 
 // ---- Catalog (list of known eForms) ----------------------------------------------------
 
-router.get('/', (req, res) => {
-  const rows = db
-    .prepare('SELECT * FROM forms_catalog WHERE tenant = ? ORDER BY form_no')
-    .all(tenantKey(req));
-  res.json({
-    forms: rows.map((r) => ({
-      formNo: r.form_no,
-      name: r.name,
-      folderNo: r.folder_no,
-      folderName: r.folder_name,
-      latestVersionNo: r.latest_version_no,
-      scannedAt: r.scanned_at,
-    })),
+const upsertCatalogRow = db.prepare(`
+  INSERT INTO forms_catalog (tenant, form_no, name, folder_no, folder_name, latest_version_no, scanned_at)
+  VALUES (@tenant, @formNo, @name, @folderNo, @folderName, @latestVersionNo, @scannedAt)
+  ON CONFLICT(tenant, form_no) DO UPDATE SET
+    name=excluded.name, folder_no=excluded.folder_no, folder_name=excluded.folder_name,
+    latest_version_no=excluded.latest_version_no, scanned_at=excluded.scanned_at
+`);
+
+function upsertCatalog(tenant, items) {
+  const now = new Date().toISOString();
+  const tx = db.transaction((rows) => {
+    for (const f of rows) {
+      upsertCatalogRow.run({ tenant, formNo: f.formNo, name: f.name, folderNo: f.folderNo, folderName: f.folderName, latestVersionNo: f.latestVersionNo, scannedAt: now });
+    }
   });
+  tx(items);
+}
+
+function readCatalog(tenant) {
+  const rows = db.prepare('SELECT * FROM forms_catalog WHERE tenant = ? ORDER BY form_no').all(tenant);
+  return rows.map((r) => ({
+    formNo: r.form_no,
+    name: r.name,
+    folderNo: r.folder_no,
+    folderName: r.folder_name,
+    latestVersionNo: r.latest_version_no,
+    scannedAt: r.scanned_at,
+  }));
+}
+
+/** If nothing's cached yet for this tenant (first visit), fetch it automatically instead of showing an empty list. */
+router.get('/', async (req, res) => {
+  const tenant = tenantKey(req);
+  let forms = readCatalog(tenant);
+  if (forms.length === 0) {
+    try {
+      const found = await scanForms(clientFor(req), {});
+      upsertCatalog(tenant, found);
+      forms = readCatalog(tenant);
+    } catch (err) {
+      return handleApiError(res, err);
+    }
+  }
+  res.json({ forms });
 });
+
+/** Refreshes a single form's catalog row after an action that creates a new version, so the list view stays current without a full rescan. */
+async function refreshCatalogEntry(req, client, formNo) {
+  try {
+    const ev = await client.getEForm(formNo, 0);
+    let folderName = null;
+    if (ev.FolderNo) {
+      try {
+        const folder = await client.getFolder(ev.FolderNo);
+        folderName = folder ? folder.Name : null;
+      } catch {
+        folderName = null;
+      }
+    }
+    upsertCatalog(tenantKey(req), [{ formNo: ev.FormNo, name: ev.Name, folderNo: ev.FolderNo, folderName, latestVersionNo: ev.VersionNo }]);
+  } catch {
+    // Best-effort — the action itself already succeeded, so don't fail the request over a cache refresh.
+  }
+}
 
 router.post('/scan', async (req, res) => {
   const client = clientFor(req);
@@ -60,23 +109,7 @@ router.post('/scan', async (req, res) => {
       maxProbe: Number(maxProbe) || 2000,
       missStreakStop: Number(missStreakStop) || 60,
     });
-
-    const tenant = tenantKey(req);
-    const upsert = db.prepare(`
-      INSERT INTO forms_catalog (tenant, form_no, name, folder_no, folder_name, latest_version_no, scanned_at)
-      VALUES (@tenant, @formNo, @name, @folderNo, @folderName, @latestVersionNo, @scannedAt)
-      ON CONFLICT(tenant, form_no) DO UPDATE SET
-        name=excluded.name, folder_no=excluded.folder_no, folder_name=excluded.folder_name,
-        latest_version_no=excluded.latest_version_no, scanned_at=excluded.scanned_at
-    `);
-    const now = new Date().toISOString();
-    const tx = db.transaction((items) => {
-      for (const f of items) {
-        upsert.run({ tenant, formNo: f.formNo, name: f.name, folderNo: f.folderNo, folderName: f.folderName, latestVersionNo: f.latestVersionNo, scannedAt: now });
-      }
-    });
-    tx(found);
-
+    upsertCatalog(tenantKey(req), found);
     res.json({ ok: true, count: found.length, forms: found });
   } catch (err) {
     handleApiError(res, err);
@@ -190,6 +223,7 @@ router.post('/:formNo/new-version', async (req, res) => {
       folderNo: latest.FolderNo,
       anonymousAccessEnabled: latest.AnonymousAccessEnabled,
     });
+    await refreshCatalogEntry(req, client, formNo);
     res.json({ ok: true, formNo: result.FormNo, versionNo: result.VersionNo, copiedFromVersionNo: latest.VersionNo });
   } catch (err) {
     handleApiError(res, err);
@@ -235,6 +269,7 @@ router.post('/:formNo/revert', async (req, res) => {
     if (source === null) return res.status(404).json({ error: 'Snapshot not found' });
 
     const result = await client.saveEForm({ formNo, versionNo: 0, ...source });
+    await refreshCatalogEntry(req, client, formNo);
     res.json({ ok: true, formNo: result.FormNo, versionNo: result.VersionNo, revertedFrom: source.sourceLabel });
   } catch (err) {
     handleApiError(res, err);
@@ -339,6 +374,7 @@ router.post('/:formNo/snapshots/:id/restore', async (req, res) => {
     if (!source) return res.status(404).json({ error: 'Snapshot not found' });
 
     const result = await client.saveEForm({ formNo, versionNo: 0, ...source });
+    await refreshCatalogEntry(req, client, formNo);
     res.json({ ok: true, formNo: result.FormNo, versionNo: result.VersionNo, revertedFrom: source.sourceLabel });
   } catch (err) {
     handleApiError(res, err);
