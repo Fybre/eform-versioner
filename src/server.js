@@ -10,10 +10,20 @@ const eformRoutes = require('./routes/eforms');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const DEFAULT_SESSION_SECRET = 'eform-versioner-dev-secret-change-me';
+const sessionSecret = process.env.SESSION_SECRET || DEFAULT_SESSION_SECRET;
+if (sessionSecret === DEFAULT_SESSION_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('Refusing to start: SESSION_SECRET is unset (or default) while NODE_ENV=production. Set a real random SESSION_SECRET.');
+    process.exit(1);
+  }
+  console.warn('Warning: using the default SESSION_SECRET. Set SESSION_SECRET to a random value before deploying this anywhere shared.');
+}
+
 app.use(express.json({ limit: '20mb' }));
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'eform-versioner-dev-secret-change-me',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -23,6 +33,9 @@ app.use(
     },
   })
 );
+
+// Unauthenticated — used by Docker/orchestrator health checks.
+app.get('/healthz', (req, res) => res.status(200).json({ ok: true }));
 
 app.use('/api/session', sessionRoutes);
 app.use('/api/eforms', eformRoutes);

@@ -68,7 +68,11 @@ click **Refresh eForms list** any time new forms are added.
 - **Screenshots**: `src/lib/render.js` uses Puppeteer with a headless Chromium to render the
   form.io schema via `form.io`'s own JS renderer (loaded from jsdelivr) and screenshot it.
   This is a nice-to-have — it degrades gracefully (an "unavailable" state, not an error) if
-  Puppeteer isn't installed or a render fails, since it's not core to versioning.
+  Puppeteer isn't installed or a render fails, since it's not core to versioning. In Docker,
+  Puppeteer is pointed at the apt-installed system `chromium` package (`PUPPETEER_EXECUTABLE_PATH`)
+  instead of downloading its own — Puppeteer's own "Chrome for Testing" download has no
+  linux-arm64 build, so it can't run unmodified on an arm64 host (e.g. Apple Silicon); the
+  system package is built for whatever architecture the image actually is.
 - **Frontend**: a small vanilla JS single-page app (`public/`), no build step.
 
 `FormDefinition`/`DefaultSubmission` are base64-encoded JSON over the wire — handled in
@@ -90,17 +94,44 @@ Environment variables (see `.env.example`) can be passed directly or loaded with
 
 ## Running in Docker
 
+### With Docker Compose (recommended)
+
 ```bash
-docker build -t eform-versioner .
-docker run -p 3000:3000 -v eform-versioner-data:/app/data eform-versioner
+cp .env.example .env
+# then edit .env and set SESSION_SECRET to a real random value, e.g.:
+#   SESSION_SECRET=$(openssl rand -base64 32)
+
+docker compose up -d --build
 ```
 
-The container bundles Chromium (via Puppeteer) and the system libraries it needs, so
-screenshot rendering works out of the box — it does need outbound internet access to
-reach both the Therefore tenant and the form.io JS CDN (jsdelivr) at render time.
+This builds the image, starts the app on http://localhost:3000, persists `/app/data` in a
+named volume (`eform-versioner-data`), restarts automatically unless stopped, and wires up
+a health check against `/healthz`. `SESSION_SECRET` is required — compose refuses to start
+without it (see `.env.example`).
 
-Mount `/app/data` as a persistent volume so offline snapshots and the forms catalog cache
-survive container restarts.
+```bash
+docker compose logs -f      # tail logs
+docker compose down         # stop (data volume is kept)
+```
+
+### With plain `docker run`
+
+```bash
+docker build -t eform-versioner .
+docker run -p 3000:3000 \
+  -e SESSION_SECRET="$(openssl rand -base64 32)" \
+  -v eform-versioner-data:/app/data \
+  eform-versioner
+```
+
+### Notes
+
+- The container runs as a non-root user (`eformv`); the image sets up `/app/data`'s
+  ownership so a fresh named volume inherits the right permissions automatically.
+- Screenshot rendering needs outbound internet access at render time — both to the
+  Therefore tenant and to the form.io JS CDN (jsdelivr).
+- Mount `/app/data` as a persistent volume (compose does this for you) so offline
+  snapshots and the forms catalog cache survive container restarts.
 
 ## Security notes
 

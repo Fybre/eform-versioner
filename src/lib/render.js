@@ -85,6 +85,10 @@ async function renderFormScreenshot(formDefinitionB64OrObj, { timeoutMs = 20000 
     browser = await puppeteerModule.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      // In Docker this points at the apt-installed system Chromium (see Dockerfile) rather
+      // than Puppeteer's own bundled download, which has no linux-arm64 build. Unset locally,
+      // Puppeteer falls back to whatever it downloaded for the dev machine's own platform.
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     });
     const page = await browser.newPage();
     await page.setViewport({ width: 820, height: 1000 });

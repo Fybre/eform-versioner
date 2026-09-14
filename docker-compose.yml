@@ -1,0 +1,24 @@
+services:
+  eform-versioner:
+    build: .
+    image: eform-versioner
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATA_DIR: /app/data
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in a .env file or the environment (a long random string)}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      - eform-versioner-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  eform-versioner-data:
