@@ -365,6 +365,79 @@ router.delete('/:formNo/snapshots/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+const SNAPSHOT_FILE_TYPE = 'eform-versioner-snapshot';
+
+/** Downloads a stored snapshot as a standalone JSON file that can later be re-uploaded (to this tool, or a teammate's). */
+router.get('/:formNo/snapshots/:id/download', (req, res) => {
+  const formNo = Number(req.params.formNo);
+  const snap = db.prepare('SELECT * FROM snapshots WHERE id = ? AND tenant = ? AND form_no = ?').get(req.params.id, tenantKey(req), formNo);
+  if (!snap) return res.status(404).json({ error: 'Snapshot not found' });
+
+  let formDefinition;
+  try {
+    formDefinition = JSON.parse(snap.form_definition);
+  } catch {
+    return res.status(500).json({ error: 'Stored snapshot form definition is corrupt' });
+  }
+
+  const payload = {
+    type: SNAPSHOT_FILE_TYPE,
+    version: 1,
+    formNo: snap.form_no,
+    formName: snap.form_name,
+    label: snap.label,
+    notes: snap.notes,
+    folderNo: snap.folder_no,
+    anonymousAccessEnabled: !!snap.anonymous_access_enabled,
+    sourceVersionNo: snap.source_version_no,
+    createdAt: snap.created_at,
+    createdBy: snap.created_by,
+    formDefinition,
+    defaultSubmission: snap.default_submission || '',
+  };
+
+  const safeLabel = (snap.label || 'snapshot').replace(/[^a-z0-9_-]+/gi, '_').slice(0, 60);
+  res.set('Content-Type', 'application/json');
+  res.set('Content-Disposition', `attachment; filename="eform-${formNo}-${safeLabel}-${snap.id}.json"`);
+  res.send(JSON.stringify(payload, null, 2));
+});
+
+/** Uploads a previously-downloaded snapshot file, storing it as a new offline snapshot for this form. */
+router.post('/:formNo/snapshots/upload', (req, res) => {
+  const formNo = Number(req.params.formNo);
+  const body = req.body || {};
+  const { formDefinition, defaultSubmission, label, notes, formName, folderNo, anonymousAccessEnabled, sourceVersionNo } = body;
+
+  if (!formDefinition || typeof formDefinition !== 'object') {
+    return res.status(400).json({ error: 'Uploaded file is missing a valid formDefinition' });
+  }
+
+  try {
+    const info = db
+      .prepare(`
+        INSERT INTO snapshots (tenant, form_no, label, notes, form_name, form_definition, default_submission, folder_no, anonymous_access_enabled, source_version_no, created_at, created_by)
+        VALUES (@tenant, @formNo, @label, @notes, @formName, @formDefinition, @defaultSubmission, @folderNo, @anon, @sourceVersionNo, @createdAt, @createdBy)
+      `)
+      .run({
+        tenant: tenantKey(req),
+        formNo,
+        label: label ? `${label} (uploaded)` : 'Uploaded snapshot',
+        notes: notes || null,
+        formName: formName || null,
+        formDefinition: JSON.stringify(formDefinition),
+        defaultSubmission: defaultSubmission || '',
+        folderNo: folderNo != null ? folderNo : null,
+        anon: anonymousAccessEnabled ? 1 : 0,
+        sourceVersionNo: sourceVersionNo != null ? sourceVersionNo : null,
+        createdAt: new Date().toISOString(),
+        createdBy: req.session.therefore.username,
+      });
+    res.json({ ok: true, id: info.lastInsertRowid });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+});
+
 /** Restores a stored offline snapshot by creating a new Therefore version from it. */
 router.post('/:formNo/snapshots/:id/restore', async (req, res) => {
   const client = clientFor(req);

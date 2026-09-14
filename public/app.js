@@ -245,12 +245,14 @@ async function loadSnapshots(formNo) {
         <button data-act="from" class="secondary-btn">Set as From</button>
         <button data-act="to" class="secondary-btn">Set as To</button>
         <button data-act="restore" class="danger-btn">Restore</button>
+        <button data-act="download" class="secondary-btn">Download</button>
         <button data-act="delete" class="link-btn">delete</button>
       </div>
     `;
     row.querySelector('[data-act="from"]').addEventListener('click', () => setCompareSide('from', 'snapshot', s.id, `Snapshot: ${s.label}`));
     row.querySelector('[data-act="to"]').addEventListener('click', () => setCompareSide('to', 'snapshot', s.id, `Snapshot: ${s.label}`));
     row.querySelector('[data-act="restore"]').addEventListener('click', () => confirmRevert({ snapshotId: s.id }, `snapshot "${s.label}"`));
+    row.querySelector('[data-act="download"]').addEventListener('click', () => downloadSnapshot(state.currentForm.formNo, s.id, s.label));
     row.querySelector('[data-act="delete"]').addEventListener('click', async () => {
       if (!confirm(`Delete snapshot "${s.label}"? This cannot be undone.`)) return;
       await api(`/eforms/${state.currentForm.formNo}/snapshots/${s.id}`, { method: 'DELETE' });
@@ -296,6 +298,50 @@ $('#snapshotBtn').addEventListener('click', () => {
       await loadSnapshots(state.currentForm.formNo);
     },
   });
+});
+
+async function downloadSnapshot(formNo, snapshotId, label) {
+  const res = await fetch(`/api/eforms/${formNo}/snapshots/${snapshotId}/download`);
+  if (!res.ok) {
+    let msg = `Download failed (${res.status})`;
+    try { msg = (await res.json()).error || msg; } catch { /* ignore */ }
+    toast(msg, true);
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safeLabel = (label || 'snapshot').replace(/[^a-z0-9_-]+/gi, '_').slice(0, 60);
+  a.href = url;
+  a.download = `eform-${formNo}-${safeLabel}-${snapshotId}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+$('#uploadSnapshotBtn').addEventListener('click', () => {
+  if (!state.currentForm) return;
+  $('#uploadSnapshotInput').click();
+});
+
+$('#uploadSnapshotInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file || !state.currentForm) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!data || data.type !== 'eform-versioner-snapshot' || !data.formDefinition) {
+      toast('That file does not look like an eForm Versioner snapshot.', true);
+      return;
+    }
+    await api(`/eforms/${state.currentForm.formNo}/snapshots/upload`, { method: 'POST', body: data });
+    toast('Snapshot uploaded.');
+    await loadSnapshots(state.currentForm.formNo);
+  } catch (err) {
+    toast(err.message || 'Failed to upload snapshot.', true);
+  }
 });
 
 async function confirmRevert(payload, label) {
