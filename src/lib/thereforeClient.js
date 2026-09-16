@@ -103,8 +103,10 @@ class ThereforeClient {
    * GetObjects with Type:47 returns every eForm tenant-wide in one call (ID=FormNo,
    * Name, FolderNo, Guid, and a per-item Flags bit that is set when
    * AnonymousAccessEnabled is true) — verified against a live tenant, matches a full
-   * FormNo scan exactly. This isn't documented anywhere as a "list eForms" operation
-   * (Type 47 happens to coincide with the eForm-folder Foldertype), so it's used as the
+   * FormNo scan exactly. Type 47 ("eForm") is a documented GetObjects Type value (see
+   * https://therefore.net/help/2023/en-us/AR/SDK/WebAPI/the_webapi_operation_getobjects.html),
+   * but the docs don't spell out that this doubles as a tenant-wide eForm listing — that
+   * part is only confirmed by the live-tenant verification above — so it's used as the
    * primary discovery path with the brute-force FormNo scan kept as a fallback in case
    * it doesn't hold on some server versions/configurations.
    */

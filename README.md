@@ -24,10 +24,12 @@ already supports a `VersionNo`.
 There's no operation named anything like "list eForms" in Therefore's REST API or WSDL — but
 `GetObjects` with `{"Flags": 1, "Type": 47}` turns out to return every eForm in the tenant in
 one call (`ID` = FormNo, plus `Name`, `FolderNo`, `Guid`, and a `Flags` bit that's set exactly
-when `AnonymousAccessEnabled` is true). This isn't documented anywhere as an eForm listing —
-`47` happens to be the same value used as the `Foldertype` for eForm folders — but it was
-verified against a live tenant to return an identical set of forms as an exhaustive `FormNo`
-scan. `src/lib/scanner.js` uses it as the primary discovery path (`listFormsViaObjects`), doing
+when `AnonymousAccessEnabled` is true). Type 47 is documented as `eForm` in the official
+[`GetObjects` reference](https://therefore.net/help/2023/en-us/AR/SDK/WebAPI/the_webapi_operation_getobjects.html)
+(the Type parameter's value table) — though only as one enumerated Type value, with no
+elaboration there that this is *the* way to list every eForm tenant-wide, which is the part
+verified here against a live tenant (an identical set of forms as an exhaustive `FormNo` scan).
+`src/lib/scanner.js` uses it as the primary discovery path (`listFormsViaObjects`), doing
 one extra `GetEForm(FormNo, 0)` per form (in parallel batches) only to pick up each form's
 latest version number, which `GetObjects` doesn't include.
 
